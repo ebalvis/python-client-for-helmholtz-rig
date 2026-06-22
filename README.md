@@ -2,96 +2,154 @@
 
 # Helmholtz Control Suite
 
-Este repositorio contiene una suite de software en Python diseñada para controlar remotamente un sistema de generación de campo magnético basado en bobinas de Helmholtz y para recibir datos de telemetría de sensores de un dispositivo Android.
+This repository contains a Python software suite designed to remotely control a
+Helmholtz-coil magnetic field generation system and to receive sensor telemetry
+from an Android device.
 
-El sistema completo se compone de tres partes que trabajan juntas:
+The complete system is made up of several parts working together:
 
-1.  **Servidor de Control (BHC2000 - Delphi)**: Una aplicación de escritorio para Windows que controla directamente tres fuentes de alimentación Wanptek a través de Modbus para generar el campo magnético.
-2.  **Servidor de Sensores (Sensor Android SCOA - B4A)**: Una aplicación Android que lee el acelerómetro y el magnetómetro del dispositivo y los transmite por la red.
-3.  **Suite de Cliente (Python)**: Este repositorio. Contiene las librerías y scripts para comunicarse con ambos servidores, permitiendo la automatización y el control remoto de todo el sistema.
-
------
-
-## Arquitectura del Sistema
-
-El proyecto sigue una arquitectura de cliente-servidor distribuida:
-
-  * **PC de Control (Python)**: Actúa como el cerebro del sistema. Ejecuta los scripts de Python que envían comandos y reciben datos.
-      * `wanptek_control.py`: Se conecta por **TCP** al Servidor de Control para ajustar voltajes, corrientes y encender/apagar las fuentes.
-      * `read_android_sensor.py`: Se suscribe por **UDP** al Servidor de Sensores para recibir datos de movimiento y campo magnético en tiempo real.
-  * **PC de Laboratorio (Delphi)**: Ejecuta la aplicación `BHC2000.exe`, que está conectada físicamente a las fuentes de alimentación por un puerto serie (Modbus RTU). Escucha comandos a través de su servidor TCP integrado.
-  * **Dispositivo Móvil (Android)**: Ejecuta la app `Sensor Android SCOA`, que actúa como una unidad de medición inercial (IMU) inalámbrica, enviando sus lecturas por UDP a los clientes suscritos.
+1.  **Control Server (BHC2000 / HelmMagControl - Delphi)**: A Windows desktop application that directly drives three Wanptek power supplies to generate the magnetic field.
+2.  **Sensor Server (SensorCast - Android)**: An Android app that reads the device's accelerometer, magnetometer (and gyroscope, in the FMX version) and broadcasts them over the network.
+3.  **HelmCalib (Lazarus/FPC and Delphi)**: Calibration and open-loop field programming application, with its own high-level remote server.
+4.  **Client Suite (Python)**: This repository. Contains the libraries and scripts to talk to the servers, enabling automation and remote control of the whole system.
 
 -----
 
-## Componentes
+## System Architecture
 
-### 1\. Servidor de Control: BHC2000 (Delphi)
+The project follows a distributed client-server architecture:
 
-Aplicación de escritorio que sirve como puente entre la red y el hardware.
+  * **Control PC (Python)**: Acts as the brain of the system. Runs the Python scripts that send commands and receive data.
+      * `wanptek_control.py`: Connects over **TCP** to the Control Server to adjust voltages, currents and toggle the supplies on/off.
+      * `sensorcast_client.py`: Subscribes over **UDP** to the Sensor Server to receive motion and magnetic field data in real time.
+      * `helmcalib_control.py`: Connects over **TCP** to the **HelmCalib** server for high-level calibration and field programming.
+      * `helmholtz_rig.py`: Ties the three pieces together and adds automatic calibration.
+  * **Lab PC (Delphi)**: Runs the supply control application, physically connected to the power supplies. Listens for commands through its built-in TCP server.
+  * **Mobile Device (Android)**: Runs the `SensorCast` app, acting as a wireless IMU, sending its readings over UDP to subscribed clients.
 
-  * **Interfaz Gráfica**: Permite el control manual de cada una de las 3 fuentes de alimentación (ejes X, Y, Z).
-  * **Comunicación**: Utiliza el protocolo **Modbus RTU** sobre un puerto serie para comunicarse con las fuentes de alimentación.
-  * **API Remota**: Implementa un **servidor TCP** en un puerto configurable (por defecto `4444`) que acepta comandos de texto simples para control remoto. Comandos soportados:
-      * `PING`: Verifica la conexión.
-      * `SET V<canal> <voltaje>`: Fija el voltaje de un canal.
-      * `SET I<canal> <corriente>`: Fija la corriente de un canal.
-      * `OUT <canal> ON|OFF`: Activa o desactiva la salida de un canal.
-      * `GET V|I|P <canal>`: Obtiene el voltaje, corriente o potencia medidos.
-      * `READ ALL`: Devuelve el estado completo de los tres canales.
-      * `ALL OFF`: Apaga todas las salidas.
+-----
 
-### 2\. Servidor de Sensores: Sensor Android SCOA (B4A)
+## Components
 
-Aplicación para Android que convierte el móvil en un sensor inalámbrico.
+### 1. Control Server: BHC2000 / HelmMagControl (Delphi)
 
-  * **Sensores**: Captura datos del **acelerómetro** y **magnetómetro** del dispositivo.
-  * **Protocolo de Comunicación**:
-    1.  Un cliente se suscribe enviando un mensaje UDP con el texto `HOLA` al puerto **51042** del móvil.
-    2.  El servidor añade la IP del cliente a su lista de distribución.
-    3.  Cada \~200ms, el servidor envía un paquete **JSON** con los datos de los sensores a todos los clientes suscritos, al puerto de destino **51043**.
-  * **Formato de Datos (JSON)**:
+Desktop application that bridges the network and the hardware.
+
+  * **Remote API**: Implements a **TCP server** (default `4444`) accepting simple text commands: `PING`, `SET V<channel> <voltage>`, `SET I<channel> <current>`, `OUT <channel> ON|OFF`, `GET V|I|P <channel>`, `READ ALL`, `ALL OFF`.
+
+### 2. Sensor Server: SensorCast (B4A) / SensorCastFMX (Delphi)
+
+Android app that turns the phone into a wireless sensor. Two versions exist: the
+original **B4A** one (accelerometer + magnetometer) and
+[**SensorCastFMX**](https://github.com/ebalvis/SensorCastFMX) in **Delphi FireMonkey**,
+which also adds a **gyroscope** and 3D visualization.
+
+  * A client subscribes by sending a UDP `HOLA` to the phone's port **51042**; the server sends a **JSON** packet every \~200 ms to port **51043**.
+  * **Data format (JSON)** — `gyroscope` only in the FMX version (optional):
     ```json
     {
       "accelerometer": { "x": 1.23, "y": 0.45, "z": 9.81 },
-      "magnetometer": { "x": 30.1, "y": -15.6, "z": 22.8 }
+      "magnetometer":  { "x": 30.1, "y": -15.6, "z": 22.8 },
+      "gyroscope":     { "x": 0.01, "y": -0.02, "z": 0.00 }
     }
     ```
 
-### 3\. Suite de Cliente (Python)
+### 3. HelmCalib — calibration and field programming (high level)
 
-Este repositorio contiene las herramientas para controlar el sistema.
+[HelmCalib](https://github.com/ebalvis/HelmCalib) fits the `B = M·I + b` model and
+programs the field in open loop. It exposes a **TCP server** (default `4445`,
+enable it in the *Connection* tab or start the app with `-remote`) with the same
+text-protocol style. Commands: `PING`, `STATUS`, `CONNECT COILS|SENSOR`,
+`GET MAG`, `GET MAGAVG <k>`, `MODEL NOMINAL A|B`, `LOAD/SAVE PROFILE`, `GET MODEL`,
+`SOLVE bx by bz`, `SETFIELD bx by bz`, `SETCURRENTS i1 i2 i3`, `FIELDOFF`,
+`CALIB CLEAR|ADD|COUNT|FIT`.
 
-  * **`wanptek_control.py`**: Una librería de cliente orientada a objetos para interactuar con el servidor Delphi.
-      * Clase `WanptekClient` que encapsula la lógica de conexión TCP y el envío de comandos.
-      * Métodos de alto nivel como `set_voltage(ch, v)`, `get_current(ch)`, etc.
-  * **`test_wanptek.py`**: Un script de ejemplo que muestra cómo usar la librería `WanptekClient` para realizar operaciones comunes como leer valores, fijar un voltaje y apagar las fuentes.
-  * **`read_android_sensor.py`**: Un script cliente que se registra en el servidor de sensores Android y muestra en consola los datos JSON recibidos en tiempo real.
+### 4. Client Suite (Python)
+
+  * **`wanptek_control.py`** — `WanptekClient`: low-level supply control (HelmMagControl, TCP 4444).
+  * **`helmcalib_control.py`** — `HelmCalibClient`: high-level HelmCalib control (TCP 4445).
+  * **`sensorcast_client.py`** — `SensorCastClient`: UDP client for the phone sensor; parses JSON with accelerometer, magnetometer and **gyroscope** (SensorCastFMX).
+  * **`helmholtz_rig.py`** — `HelmholtzRig`: **facade tying the three pieces together** with automatic calibration.
+  * **`read_android_sensor.py`** — sensor demo (uses `SensorCastClient`).
+  * **`test_wanptek.py`**, **`test_helmcalib.py`**, **`test_rig.py`** — examples and tests (`test_rig.py` needs no hardware).
+
+> Version history in [CHANGELOG.md](CHANGELOG.md).
 
 -----
 
-## Guía de Inicio Rápido
+## HelmCalibClient (high level)
 
-1.  **Configurar Hardware**: Conecta las 3 fuentes de alimentación Wanptek al PC de laboratorio mediante un adaptador USB a RS-485.
-2.  **Iniciar Servidor de Control**:
-      * Ejecuta `BHC2000.exe` en el PC de laboratorio.
-      * Configura el puerto COM, los parámetros serie y las direcciones Modbus de cada fuente.
-      * Asegúrate de que el servidor TCP esté activado y anota la dirección IP del PC y el puerto.
-3.  **Iniciar Servidor de Sensores**:
-      * Instala y ejecuta la APK `Sensor Android SCOA` en un móvil Android.
-      * Asegúrate de que el móvil esté en la misma red WiFi que el PC de control.
-      * La app mostrará su dirección IP. Anótala.
-4.  **Configurar y Ejecutar Clientes Python**:
-      * Clona este repositorio en tu PC de control.
-      * Abre `wanptek_control.py` o `test_wanptek.py` y modifica la IP y el puerto para que apunten al PC de laboratorio donde corre el servidor Delphi.
-      * Abre `read_android_sensor.py` y modifica la `SERVER_IP` para que sea la IP del móvil Android.
-      * Ejecuta los scripts:
-        ```bash
-        # Para controlar las fuentes
-        python test_wanptek.py
+```python
+from helmcalib_control import HelmCalibClient
 
-        # Para ver los datos de los sensores
-        python read_android_sensor.py
-        ```
+c = HelmCalibClient("127.0.0.1", 4445)
+c.connect()
 
+c.model_nominal("A")                 # catalog model (or load_profile / calib_*)
+sol = c.solve(40, 20, 60)            # currents for B=(40,20,60) uT, without sending
+print(sol["I"], sol["saturated"])
 
+# with the supplies connected:
+c.connect_coils("127.0.0.1", 4444)
+c.set_field(40, 20, 60)              # computes and SENDS the currents
+c.field_off()
+c.close()
+```
+
+Full calibration from Python (measured I→B points):
+
+```python
+c.calib_clear()
+for I, B in points:                  # B measured with the magnetometer
+    c.calib_add(*I, *B)
+rms = c.calib_fit()                  # fits the model, returns the RMS residual
+```
+
+Methods: `ping`, `status`, `help`, `connect_coils/sensor`, `disconnect_*`,
+`get_mag`, `get_mag_avg`, `read_all`, `model_nominal`, `load_profile`,
+`save_profile`, `get_model`, `solve`, `set_field`, `set_currents`, `field_off`,
+`calib_clear/add/count/fit`. `test_helmcalib.py` is an end-to-end test
+(no hardware required: nominal model + synthetic calibration over the network).
+
+-----
+
+## SensorCastClient (phone sensor)
+
+Reads the phone's magnetometer/accelerometer/gyroscope over UDP. Supports the FMX
+version (with gyroscope) and the legacy B4A one (`gyro` will be `None`).
+
+```python
+from sensorcast_client import SensorCastClient
+
+with SensorCastClient("192.168.88.166") as s:   # wlan0 IP shown by the app
+    r = s.read()                                 # Reading(acc, mag, gyro|None, raw, addr)
+    print(r.mag.x, r.mag.y, r.mag.z)
+    bx, by, bz = s.mag_avg(k=10)                 # mean of 10 magnetometer samples
+```
+
+Methods: `connect`, `subscribe`, `read`, `readings` (generator), `mag_avg`,
+`acc_avg`, `gyro_avg`, `close`. Run `python sensorcast_client.py <ip>` as a demo.
+
+-----
+
+## HelmholtzRig (the three pieces combined)
+
+Facade composing `WanptekClient` + `HelmCalibClient` + `SensorCastClient` that
+automates calibration: sweeps currents, measures the field with the phone and
+fits `B = M·I + b` in HelmCalib.
+
+```python
+from helmholtz_rig import HelmholtzRig
+
+rig = HelmholtzRig(coils_host="10.1.1.50",       # HelmMagControl (optional)
+                   calib_host="127.0.0.1",       # HelmCalib --remote
+                   sensor_ip="192.168.88.166")   # SensorCastFMX (wlan0)
+with rig:
+    rms = rig.auto_calibrate(settle=2.0, k=15)   # sweep + fit -> RMS (uT)
+    rig.set_field(40, 20, 60)                    # program target B
+    rig.all_off()                                # turn off field and supplies
+```
+
+`auto_calibrate` flow: for each current triple → HelmCalib applies it to the
+coils (`SETCURRENTS`) → wait (`settle`) → the phone measures the mean field
+(`mag_avg`) → accumulate the point `(I, B)` (`CALIB ADD`) → finally `CALIB FIT`.
