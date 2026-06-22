@@ -1,12 +1,12 @@
 #-------------------------------------------------------------------------------
-# Name:        module1
-# Purpose:     libreria a servidor control modbus
+# Name:        wanptek_control
+# Purpose:     Client library for the Modbus control server (HelmMagControl).
 #
 # Author:      ebalvis
 #
 # Created:     25/09/2025
 # Copyright:   (c) ebalvis 2025
-# Licence:     <your licence>
+# Licence:     MIT
 #-------------------------------------------------------------------------------
 import socket
 
@@ -18,20 +18,20 @@ class WanptekClient:
         self.sock = None
 
     def connect(self):
-        """Conecta al servidor TCP"""
+        """Connects to the TCP server."""
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.settimeout(self.timeout)
         self.sock.connect((self.host, self.port))
 
     def send_command(self, command):
-        """Envía un comando de texto y recibe la respuesta"""
+        """Sends a text command and receives the response."""
         if not self.sock:
-            raise ConnectionError("No conectado al servidor")
+            raise ConnectionError("Not connected to the server")
         self.sock.sendall((command + "\n").encode("utf-8"))
         resp = self.sock.recv(1024).decode("utf-8").strip()
         return resp
 
-    # ---- Comandos de alto nivel ----
+    # ---- high-level commands ----
     def set_voltage(self, channel, volts):
         return self.send_command(f"SET V{channel} {volts}")
 
